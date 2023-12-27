@@ -41,11 +41,11 @@ def download_and_upload(update: Update, context: CallbackContext) -> None:
                     bar.update(len(data))
                     file.write(data)
 
-            # ارسال فایل به تلگرام
+            # ارسال فایل به تلگرام به عنوان فیلم
             bot = Bot(token=BOT_TOKEN)
             chat_id = update.message.chat_id
             with open(file_path, "rb") as file:
-                bot.send_document(chat_id=chat_id, document=file)
+                bot.send_video(chat_id=chat_id, video=file, supports_streaming=True)
 
             # پاک کردن فایل موقت
             os.remove(file_path)
