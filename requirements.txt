@@ -1,3 +1,2 @@
-os
-tqdm
 python-telegram-bot==13.7.0
+tqdm
