@@ -18,6 +18,7 @@ def download_file(update: Update, context: CallbackContext) -> None:
         response = requests.get(url, stream=True)
         total_size = int(response.headers.get('content-length', 0))
         downloaded_size = 0
+        start_time = time.time()
 
         # Send initial download message
         message = context.bot.send_message(chat_id, 'در حال دانلود...')
@@ -28,16 +29,22 @@ def download_file(update: Update, context: CallbackContext) -> None:
                 if chunk:
                     file.write(chunk)
                     downloaded_size += len(chunk)
+                    elapsed_time = time.time() - start_time
+
+                    # Calculate download speed
+                    download_speed = downloaded_size / (1024 * 1024) / elapsed_time  # in MB/s
+
                     percentage = (downloaded_size / total_size) * 100
                     remaining_size = total_size - downloaded_size
 
-                    # Update the existing message with download progress
+                    # Update the existing message with download progress and speed
                     new_content = f'در حال دانلود... {int(percentage)}%\n' \
                                   f'حجم دانلود شده: {downloaded_size / (1024 * 1024):.2f} MB\n' \
-                                  f'حجم باقی‌مانده: {remaining_size / (1024 * 1024):.2f} MB'
-                    
+                                  f'حجم باقی‌مانده: {remaining_size / (1024 * 1024):.2f} MB\n' \
+                                  f'سرعت دانلود: {download_speed:.2f} MB/s'
+
                     if not context.user_data.get('last_content') or context.user_data['last_content'] != new_content:
-                        # Update the existing message with download progress
+                        # Update the existing message with download progress and speed
                         context.bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=context.user_data['message_id'],
