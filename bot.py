@@ -1,101 +1,82 @@
 import os
 import requests
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, CallbackContext, Filters
-from tqdm import tqdm
-import threading
 import time
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# توکن ربات تلگرام خود را اینجا قرار دهید
-BOT_TOKEN = "5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ"
+# Replace 'YOUR_BOT_TOKEN' with your actual bot token
+TOKEN = '5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ'
 
-# وضعیت‌های مختلف مکالمه
-DOWNLOAD, IN_PROGRESS = range(2)
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('سلام! برای دانلود فایل، لطفاً لینک مستقیم فایل را ارسال کنید.')
 
-def start(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text('سلام! این ربات لینک مستقیم فایل را دریافت و در تلگرام آپلود می‌کند. '
-                              'لطفاً لینک مستقیم فایل خود را ارسال کنید.')
+def download_file(update: Update, context: CallbackContext) -> None:
+    url = update.message.text
+    chat_id = update.message.chat_id
 
-    return DOWNLOAD
+    try:
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded_size = 0
 
-def download_and_upload(update: Update, context: CallbackContext) -> int:
-    # دریافت لینک مستقیم فایل از پیام کاربر
-    direct_link = update.message.text
+        # Send initial download message
+        message = context.bot.send_message(chat_id, 'در حال دانلود...')
+        context.user_data['message_id'] = message.message_id
 
-    if direct_link:
-        try:
-            # درخواست اطلاعات فایل (حجم)
-            response = requests.head(direct_link)
-            file_size = int(response.headers.get('Content-Length', 0))
+        with open('downloaded_file', 'wb') as file:
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    file.write(chunk)
+                    downloaded_size += len(chunk)
+                    percentage = (downloaded_size / total_size) * 100
+                    remaining_size = total_size - downloaded_size
 
-            # ایجاد یک کیبورد شیشه‌ای برای نمایش پیشرفت
-            keyboard = [[InlineKeyboardButton("لغو دانلود", callback_data='cancel')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+                    # Update the existing message with download progress
+                    new_content = f'در حال دانلود... {int(percentage)}%\n' \
+                                  f'حجم دانلود شده: {downloaded_size / (1024 * 1024):.2f} MB\n' \
+                                  f'حجم باقی‌مانده: {remaining_size / (1024 * 1024):.2f} MB'
+                    
+                    if not context.user_data.get('last_content') or context.user_data['last_content'] != new_content:
+                        # Update the existing message with download progress
+                        context.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=context.user_data['message_id'],
+                            text=new_content
+                        )
+                        context.user_data['last_content'] = new_content
+                    else:
+                        # If content hasn't changed, wait for a short delay
+                        time.sleep(1)
 
-            # ارسال پیام شروع دانلود به همراه کیبورد شیشه‌ای
-            update.message.reply_text(f'دانلود فایل شروع شد...\nحجم فایل: {file_size / (1024 * 1024):.2f} MB',
-                                      reply_markup=reply_markup)
+        # Upload the downloaded file to Telegram
+        with open('downloaded_file', 'rb') as file:
+            context.bot.send_document(chat_id, document=file)
 
-            # ذخیره فایل در سرور با نمایش progress bar
-            file_path = "downloaded_file"
-            with open(file_path, "wb") as file:
-                for data in requests.get(direct_link, stream=True).iter_content(chunk_size=1024):
-                    file.write(data)
+        # Send completion message
+        context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=context.user_data['message_id'],
+            text='دانلود کامل شد!'
+        )
 
-                    # ارسال پیام به روزرسانی پیشرفت
-                    completed_size = os.path.getsize(file_path)
-                    progress = (completed_size / file_size) * 100
-                    update.message.edit_text(
-                        f'در حال دانلود...\nحجم فایل: {file_size / (1024 * 1024):.2f} MB\n'
-                        f'درصد: {progress:.2f}%',
-                        reply_markup=reply_markup
-                    )
+    except Exception as e:
+        context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=context.user_data['message_id'],
+            text=f'خطا: {e}'
+        )
 
-            # ارسال فایل به تلگرام به عنوان فیلم
-            chat_id = update.message.chat_id
-            with open(file_path, "rb") as file:
-                context.bot.send_video(chat_id=chat_id, video=file, supports_streaming=True)
-
-            # پاک کردن فایل موقت
-            os.remove(file_path)
-
-            # پیام پایان دانلود
-            update.message.edit_text('دانلود با موفقیت انجام شد!')
-
-        except Exception as e:
-            update.message.reply_text(f'خطا در دریافت یا ارسال فایل: {e}')
-    else:
-        update.message.reply_text('لطفاً یک لینک مستقیم فایل را به عنوان پارامتر ارسال کنید.')
-
-    return ConversationHandler.END
-
-def cancel(update: Update, context: CallbackContext) -> int:
-    # ارسال پیام لغو به کاربر
-    update.callback_query.answer('دانلود لغو شد.')
-
-    return ConversationHandler.END
+    finally:
+        os.remove('downloaded_file')
 
 def main() -> None:
-    updater = Updater(token=BOT_TOKEN)
-    dispatcher = updater.dispatcher
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
 
-    # استفاده از ConversationHandler برای مدیریت وضعیت مکالمه
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            DOWNLOAD: [MessageHandler(Filters.text & ~Filters.command, download_and_upload)],
-        },
-        fallbacks=[CallbackQueryHandler(cancel, pattern='^cancel$')], 
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, download_file))
 
-        # fallbacks=[CallbackQueryHandler(cancel, pattern='^cancel$')],
-    )
-
-    dispatcher.add_handler(conv_handler)
-
-    # شروع ربات
     updater.start_polling()
-
-    # ربات را به حالت اجرای دائمی ببرید
     updater.idle()
 
 if __name__ == '__main__':
