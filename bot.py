@@ -2,7 +2,7 @@ import os
 import requests
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-
+from multiprocessing import Process, Manager
 
 TOKEN = '5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ'
 DOWNLOAD_FOLDER = 'downloads'
@@ -71,7 +71,7 @@ def download_and_upload(update: Update, context: CallbackContext) -> None:
     print('Upload complete!')
 
 if __name__ == '__main__':
-    updater = Updater(token=TOKEN, use_context=True)
+    updater = Updater(token=TOKEN, use_context=True, request_kwargs={'connect_timeout': 15, 'read_timeout': 15})
     dispatcher = updater.dispatcher
 
     # Handlers
