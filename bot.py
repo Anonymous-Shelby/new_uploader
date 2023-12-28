@@ -1,5 +1,6 @@
 import os
 import requests
+import psutil
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from multiprocessing import Process, Manager
@@ -36,6 +37,11 @@ def upload_to_telegram(file_path, chat_id, context):
     with open(file_path, 'rb') as file:
         context.bot.send_document(chat_id, document=file)
 
+def get_disk_usage():
+    # Get disk usage in GB
+    usage = psutil.disk_usage('/')
+    return f'Disk Usage: Total: {usage.total / (1024 ** 3):.2f} GB, Used: {usage.used / (1024 ** 3):.2f} GB, Free: {usage.free / (1024 ** 3):.2f} GB'
+
 def download_and_upload(update: Update, context: CallbackContext) -> None:
     chat_id = update.message.chat_id
     user_id = update.message.from_user.id
@@ -55,23 +61,31 @@ def download_and_upload(update: Update, context: CallbackContext) -> None:
         'download_complete': False
     })
 
-    # Start the download process in parallel
-    download_process = Process(target=download_file, args=(download_url, file_name, progress_dict))
-    download_process.start()
+    try:
+        # Start the download process in parallel
+        download_process = Process(target=download_file, args=(download_url, file_name, progress_dict))
+        download_process.start()
 
-    # Wait for the download to complete
-    download_process.join()
+        # Wait for the download to complete
+        download_process.join()
 
-    # Display progress in console for upload
-    print('Uploading to Telegram...')
-    
-    # Upload the file to Telegram
-    upload_to_telegram(file_name, chat_id, context)
+        # Display progress in console for upload
+        print('Uploading to Telegram...')
+        
+        # Upload the file to Telegram
+        upload_to_telegram(file_name, chat_id, context)
 
-    print('Upload complete!')
+        print('Upload complete!')
+
+        # Display disk usage information
+        disk_usage_info = get_disk_usage()
+        context.bot.send_message(chat_id, disk_usage_info)
+
+    except Exception as e:
+        context.bot.send_message(chat_id, f'Error: {str(e)}')
 
 if __name__ == '__main__':
-    updater = Updater(token=TOKEN, use_context=True, request_kwargs={'connect_timeout': 15, 'read_timeout': 15})
+    updater = Updater(token=TOKEN, use_context=True)
     dispatcher = updater.dispatcher
 
     # Handlers
