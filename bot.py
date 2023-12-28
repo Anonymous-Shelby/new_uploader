@@ -1,13 +1,17 @@
 import os
 import requests
+import urllib3
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from urllib.parse import urlparse
 from pathlib import Path
 from tqdm import tqdm
 
-TOKEN = '2084351753:AAEfTG-KErfPLhCrS5d8c1EUN7zl8ylmmoY'
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
 DOWNLOAD_FOLDER = 'downloads'
+
+# غیرفعال‌سازی هشدارهای امنیتی برای اتصال HTTP
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text('Hello! Send me a direct download link to get started.')
@@ -31,8 +35,8 @@ def download_and_upload(update: Update, context: CallbackContext) -> None:
     file_name = os.path.join(user_download_folder, 'video.mp4')
 
     try:
-        # Download the file
-        with requests.get(download_url, stream=True, timeout=(30, 30)) as req, open(file_name, 'wb') as file:
+        # Download the file using HTTP
+        with requests.get(download_url, stream=True, timeout=(30, 30), verify=False) as req, open(file_name, 'wb') as file:
             total_size = int(req.headers.get('content-length', 0))
             uploaded_size = 0
             last_percentage = 0
