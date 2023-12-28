@@ -2,7 +2,7 @@ import os
 import requests
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from multiprocessing import Process, Manager
+
 
 TOKEN = '5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ'
 DOWNLOAD_FOLDER = 'downloads'
