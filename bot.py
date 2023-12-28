@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 from tqdm import tqdm
 
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+TOKEN = '2084351753:AAFz2Rzdy2m7lm7ODq72hKGsladDczSzyg0'
 DOWNLOAD_FOLDER = 'downloads'
 
 # غیرفعال‌سازی هشدارهای امنیتی برای اتصال HTTP
