@@ -6,3 +6,4 @@ multiprocess
 psutil
 url-parser
 urllib3
+telebot
