@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 from tqdm import tqdm
 
-TOKEN = '2084351753:AAFlk-3lW691Bfci4nwIq0bzkGIuseW2OVo'
+TOKEN = '2084351753:AAEfTG-KErfPLhCrS5d8c1EUN7zl8ylmmoY'
 DOWNLOAD_FOLDER = 'downloads'
 
 def start(update: Update, context: CallbackContext) -> None:
