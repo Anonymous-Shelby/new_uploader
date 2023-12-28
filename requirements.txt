@@ -5,3 +5,4 @@ threaded
 multiprocess
 psutil
 url-parser
+urllib3
