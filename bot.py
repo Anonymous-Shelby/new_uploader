@@ -1,127 +1,86 @@
 import os
 import requests
-from telegram import Bot, InputFile
-from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
-from tqdm import tqdm
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from multiprocessing import Process, Manager
 
-# توکن ربات تلگرام خود را در اینجا قرار دهید
-TELEGRAM_BOT_TOKEN = '5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ'
+TOKEN = '5032426994:AAFTz0n2jDGKRAubthsGbCO1u3A01UNydKQ'
+DOWNLOAD_FOLDER = 'downloads'
 
-# دیکشنری برای ذخیره اطلاعات دانلود به صورت گلوبال
-downloads = {}
-# متغیر برای نگهداری وضعیت دستورات دیگر
-command_status = {}
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text('Hello! Send me a direct download link to get started.')
 
-def start(update, context):
-    update.message.reply_text("ربات استارت شد!")
+def download_file(url, file_path, progress_dict):
+    response = requests.get(url, stream=True)
+    total_size = int(response.headers.get('content-length', 0))
+    downloaded_size = 0
 
-def cancel(update, context):
+    with open(file_path, 'wb') as file, requests.get(url, stream=True) as req:
+        for chunk in req.iter_content(chunk_size=1024):
+            if chunk:
+                file.write(chunk)
+                downloaded_size += len(chunk)
+
+                # Update progress in the shared dictionary
+                progress_dict['downloaded_size'] = downloaded_size
+                progress_dict['total_size'] = total_size
+
+                # Display progress in console
+                print(f'Downloading... {downloaded_size}/{total_size} bytes ({(downloaded_size / total_size) * 100:.2f}%)', end='\r')
+
+    # Mark download as complete
+    progress_dict['download_complete'] = True
+    print('\nDownload complete!')
+
+def upload_to_telegram(file_path, chat_id, context):
+    with open(file_path, 'rb') as file:
+        context.bot.send_document(chat_id, document=file)
+
+def download_and_upload(update: Update, context: CallbackContext) -> None:
     chat_id = update.message.chat_id
-    if chat_id in downloads:
-        # حذف اطلاعات دانلود
-        del downloads[chat_id]
-        # غیرفعال کردن دستور cancel
-        command_status[chat_id]['cancel'] = False
-        update.message.reply_text("دانلود متوقف شد.")
-    else:
-        update.message.reply_text("هیچ دانلود فعالی برای لغو وجود ندارد.")
+    user_id = update.message.from_user.id
+    download_url = update.message.text
 
-def status(update, context):
-    chat_id = update.message.chat_id
-    if chat_id in downloads:
-        # ارسال پیام با اطلاعات دانلود
-        file_size, downloaded_size = downloads[chat_id]
-        message = f"حجم فایل: {file_size / (1024 * 1024):.2f} MB\nمقدار دانلود شده: {downloaded_size / (1024 * 1024):.2f} MB"
-        update.message.reply_text(message)
-    else:
-        update.message.reply_text("هیچ دانلود فعالی برای نمایش وضعیت وجود ندارد.")
+    # Create a folder for each user
+    user_download_folder = os.path.join(DOWNLOAD_FOLDER, str(user_id))
+    os.makedirs(user_download_folder, exist_ok=True)
 
-def download_and_upload_video(update, context):
-    # دریافت لینک از پیام
-    video_link = update.message.text
-    chat_id = update.message.chat_id
+    # Generate a unique filename
+    file_name = os.path.join(user_download_folder, 'video.mp4')
 
-    try:
-        # بررسی وضعیت دستورات دیگر
-        if chat_id in command_status and command_status[chat_id].get('cancel', False):
-            update.message.reply_text("دانلود لغو شده است.")
-            return
+    # Shared dictionary for progress tracking
+    progress_dict = Manager().dict({
+        'downloaded_size': 0,
+        'total_size': 0,
+        'download_complete': False
+    })
 
-        # دانلود فایل ویدیو
-        video_file, file_size = download_video(video_link, update)
+    # Start the download process in parallel
+    download_process = Process(target=download_file, args=(download_url, file_name, progress_dict))
+    download_process.start()
 
-        # آپلود فایل به تلگرام
-        upload_video_to_telegram(update, context, video_file)
+    # Wait for the download to complete
+    download_process.join()
 
-        # حذف اطلاعات دانلود
-        del downloads[chat_id]
+    # Display progress in console for upload
+    print('Uploading to Telegram...')
+    
+    # Upload the file to Telegram
+    upload_to_telegram(file_name, chat_id, context)
 
-        # حذف فایل موقت
-        os.remove(video_file)
+    print('Upload complete!')
 
-    except Exception as e:
-        print(f"Error: {e}")
-        update.message.reply_text("مشکلی در دانلود یا آپلود فایل وجود دارد.")
-        # در صورت بروز خطا هم دانلود را متوقف کنید
-        del downloads[chat_id]
+if __name__ == '__main__':
+    updater = Updater(token=TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
 
-def download_video(video_link, update):
-    # ایجاد یک نام فایل موقت
-    temp_file_name = "temp_video.mp4"
-
-    # دریافت اندازه فایل
-    response = requests.head(video_link)
-    file_size = int(response.headers.get('content-length', 0))
-
-    # ذخیره اطلاعات دانلود برای نمایش وضعیت
-    chat_id = update.message.chat_id
-    downloads[chat_id] = (file_size, 0)
-
-    # نمایش نوار پیشرفت
-    with tqdm(total=file_size, unit='B', unit_scale=True, unit_divisor=1024, desc='Downloading') as progress_bar:
-        # دانلود فایل ویدیو
-        response = requests.get(video_link, stream=True)
-        with open(temp_file_name, 'wb') as video_file:
-            for chunk in response.iter_content(chunk_size=8192):
-                video_file.write(chunk)
-                progress_bar.update(len(chunk))
-                # به‌روزرسانی مقدار دانلود شده برای نمایش وضعیت
-                downloads[chat_id] = (file_size, downloads[chat_id][1] + len(chunk))
-
-    update.message.reply_text("دانلود فایل با موفقیت انجام شد.")
-    return temp_file_name, file_size
-
-def upload_video_to_telegram(update, context, video_file):
-    # دریافت chat_id
-    chat_id = update.message.chat_id
-
-    # ارسال فایل به تلگرام
-    context.bot.send_video(chat_id=chat_id, video=open(video_file, 'rb'))
-
-def main():
-    # ساخت یک ربات تلگرام
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    updater = Updater(token=TELEGRAM_BOT_TOKEN, use_context=True)
-
-    # ایجاد یک CommandHandler برای دستور start
+    # Handlers
     start_handler = CommandHandler('start', start)
-    updater.dispatcher.add_handler(start_handler)
+    download_handler = MessageHandler(Filters.text & ~Filters.command, download_and_upload)
 
-    # ایجاد یک CommandHandler برای دستور cancel
-    cancel_handler = CommandHandler('cancel', cancel)
-    updater.dispatcher.add_handler(cancel_handler)
+    dispatcher.add_handler(start_handler)
+    dispatcher.add_handler(download_handler)
 
-    # ایجاد یک CommandHandler برای دستور status
-    status_handler = CommandHandler('status', status)
-    updater.dispatcher.add_handler(status_handler)
-
-    # ایجاد یک MessageHandler برای پاسخ به پیام‌های متنی کاربران
-    message_handler = MessageHandler(Filters.text & ~Filters.command, download_and_upload_video)
-    updater.dispatcher.add_handler(message_handler)
-
-    # شروع ربات
+    # Start the Bot
     updater.start_polling()
     updater.idle()
-
-if __name__ == "__main__":
-    main()
