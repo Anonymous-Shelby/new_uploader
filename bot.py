@@ -1,5 +1,4 @@
 import os
-import requests
 import urllib3
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
@@ -36,13 +35,14 @@ def download_and_upload(update: Update, context: CallbackContext) -> None:
 
     try:
         # Download the file using HTTP
-        with requests.get(download_url, stream=True, timeout=(30, 30), verify=False) as req, open(file_name, 'wb') as file:
+        http = urllib3.PoolManager()
+        with http.request('GET', download_url, preload_content=False) as req, open(file_name, 'wb') as file:
             total_size = int(req.headers.get('content-length', 0))
             uploaded_size = 0
             last_percentage = 0
             message = context.bot.send_message(chat_id, f'Uploading... {uploaded_size}/{total_size} bytes (0.00%)')
 
-            for chunk in tqdm(req.iter_content(chunk_size=1024), total=total_size // 1024, unit='KB', unit_scale=True):
+            for chunk in tqdm(req.stream(1024), total=total_size // 1024, unit='KB', unit_scale=True):
                 if chunk:
                     file.write(chunk)
                     uploaded_size += len(chunk)
