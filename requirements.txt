@@ -4,4 +4,4 @@ requests
 threaded
 multiprocess
 psutil
-urlparse
+url-parser
