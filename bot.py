@@ -1,87 +1,42 @@
-import os
-import urllib3
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from urllib.parse import urlparse
-from pathlib import Path
-from tqdm import tqdm
+import wget
+import time
 
-TOKEN = '2084351753:AAFz2Rzdy2m7lm7ODq72hKGsladDczSzyg0'
-DOWNLOAD_FOLDER = 'downloads'
+import telebot
 
-# غیرفعال‌سازی هشدارهای امنیتی برای اتصال HTTP
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+bot = telebot.TeleBot("2084351753:AAFz2Rzdy2m7lm7ODq72hKGsladDczSzyg0")
 
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text('Hello! Send me a direct download link to get started.')
+@bot.message_handler(commands=["start"])
+def start(message):
+    bot.send_message(message.chat.id, "سلام! برای شروع دانلود، لطفاً یک لینک دانلود مستقیم را ارسال کنید.")
 
-def download_and_upload(update: Update, context: CallbackContext) -> None:
-    chat_id = update.message.chat_id
-    user_id = update.message.from_user.id
-    download_url = update.message.text
+@bot.message_handler(content_types=["text"])
+def download(message):
+    url = message.text
+    filename = url.split("/")[-1]
 
-    # Validate URL
-    parsed_url = urlparse(download_url)
-    if not parsed_url.scheme or not parsed_url.netloc:
-        context.bot.send_message(chat_id, 'Invalid URL. Please provide a valid direct download link.')
+    response = wget.download(url, filename)
+
+    if response.status_code != 0:
+        bot.send_message(message.chat.id, "خطا در دانلود.")
         return
 
-    # Create a folder for each user
-    user_download_folder = os.path.join(DOWNLOAD_FOLDER, str(user_id))
-    Path(user_download_folder).mkdir(parents=True, exist_ok=True)
+    total_size = response.info().get("Content-Length")
+    downloaded_size = 0
 
-    # Generate a unique filename
-    file_name = os.path.join(user_download_folder, 'video.mp4')
+    with open(filename, "wb") as f:
+        for chunk in response.iter_content(chunk_size=1024):
+            downloaded_size += len(chunk)
+            f.write(chunk)
 
-    try:
-        # Download the file using HTTP
-        http = urllib3.PoolManager()
-        with http.request('GET', download_url, preload_content=False) as req, open(file_name, 'wb') as file:
-            total_size = int(req.headers.get('content-length', 0))
-            uploaded_size = 0
-            last_percentage = 0
-            message = context.bot.send_message(chat_id, f'Uploading... {uploaded_size}/{total_size} bytes (0.00%)')
+            progress = downloaded_size / total_size
 
-            for chunk in tqdm(req.stream(1024), total=total_size // 1024, unit='KB', unit_scale=True):
-                if chunk:
-                    file.write(chunk)
-                    uploaded_size += len(chunk)
-                    percentage = (uploaded_size / total_size) * 100
+            # فقط یکبار پیام را ارسال کن
+            if not hasattr(bot, "progress_message"):
+                bot.progress_message = bot.send_message(message.chat.id, f"دانلود در حال انجام است... {progress * 100:.2f}%")
 
-                    # Check if the percentage has changed significantly
-                    if abs(percentage - last_percentage) >= 1.0:
-                        context.bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=message.message_id,
-                            text=f'Uploading... {uploaded_size}/{total_size} bytes ({percentage:.2f}%)'
-                        )
-                        last_percentage = percentage
+            # فقط مقدار نوار پیشرفت را آپدیت کن
+            bot.edit_message_text(bot.progress_message, f"دانلود در حال انجام است... {progress * 100:.2f}%")
 
-        print('\nDownload complete!')
+    bot.send_message(message.chat.id, "دانلود با موفقیت انجام شد.")
 
-        # Upload the file to Telegram
-        with open(file_name, 'rb') as file:
-            context.bot.send_document(chat_id, document=file, timeout=120)
-
-        print('Upload complete!')
-
-        # Send a completion message
-        context.bot.send_message(chat_id, 'Download and upload complete!')
-
-    except Exception as e:
-        context.bot.send_message(chat_id, f'Error: {str(e)}')
-
-if __name__ == '__main__':
-    updater = Updater(token=TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-
-    # Handlers
-    start_handler = CommandHandler('start', start)
-    download_handler = MessageHandler(Filters.text & ~Filters.command, download_and_upload)
-
-    dispatcher.add_handler(start_handler)
-    dispatcher.add_handler(download_handler)
-
-    # Start the Bot
-    updater.start_polling()
-    updater.idle()
+bot.polling()
