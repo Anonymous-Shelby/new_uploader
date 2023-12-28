@@ -90,9 +90,11 @@ if __name__ == '__main__':
 
     # Handlers
     start_handler = CommandHandler('start', start)
+    status_handler = CommandHandler('status',get_disk_usage)
     download_handler = MessageHandler(Filters.text & ~Filters.command, download_and_upload)
 
     dispatcher.add_handler(start_handler)
+    dispatcher.add_handler(status_handler)
     dispatcher.add_handler(download_handler)
 
     # Start the Bot
